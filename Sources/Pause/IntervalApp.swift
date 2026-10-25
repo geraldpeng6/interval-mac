@@ -15,7 +15,9 @@ import AppKit
         .commands {
             CommandGroup(replacing: .newItem) {}
             CommandGroup(after: .appInfo) {
-                Button("开始一组活动") { store.startSession() }.keyboardShortcut("r", modifiers: [.command, .shift])
+                Button(store.sessionActive ? "回到进行中的活动" : "开始一组活动") {
+                    if store.sessionActive { store.revealSession() } else { store.startSession() }
+                }.keyboardShortcut("r", modifiers: [.command, .shift])
                 Button(store.preferences.monitoring ? "暂停监测" : "继续监测") {
                     if store.hasConsented { store.preferences.monitoring.toggle() }
                 }
@@ -24,8 +26,23 @@ import AppKit
         MenuBarExtra {
             MenuContent(store: store)
         } label: {
-            Label("间歇", systemImage: store.preferences.monitoring ? "leaf" : "pause.circle")
+            Label {
+                Text("间歇")
+            } icon: {
+                Image(systemName: sessionSymbol)
+            }
+            .accessibilityLabel(menuBarAccessibilityLabel)
         }
+    }
+    private var sessionSymbol: String {
+        if store.sessionActive { return store.sessionPaused ? "pause.circle.fill" : "hourglass" }
+        return store.preferences.monitoring ? "leaf" : "pause.circle"
+    }
+    private var menuBarAccessibilityLabel: String {
+        if store.sessionActive, let item = store.currentItem {
+            return store.sessionPaused ? "间歇，活动已暂停：\(item.activity.title)" : "间歇，正在活动：\(item.activity.title)"
+        }
+        return store.preferences.monitoring ? "间歇，监测中" : "间歇，监测已暂停"
     }
 }
 @MainActor final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -43,8 +60,20 @@ struct MenuContent: View {
         Text("间歇 · 今天已完成 \(store.todayCompletions) 次活动")
         Text(store.decision.reason)
         Divider()
-        Button("打开间歇") { openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true) }
-        Button("开始一组活动") { store.startSession(); openWindow(id: "main") }.disabled(store.enabledRoutine.isEmpty)
+        if store.sessionActive, let item = store.currentItem {
+            Text("进行中 · \(item.activity.title) · \(store.sessionPaused ? "已暂停" : sessionClock(store.sessionRemaining))")
+            Button(store.sessionPaused ? "继续活动" : "暂停活动") { store.toggleSessionPause() }
+            Button("结束这组活动") { store.cancelSession() }
+            Button("打开活动窗口") { openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true) }
+            Divider()
+        } else if store.sessionFinished {
+            Text("这组活动已完成")
+            Button("知道了") { store.cancelSession() }
+            Divider()
+        }
+        if !store.sessionActive { Button("打开间歇") { openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true) } }
+        Button("开始一组活动") { store.startSession(); openWindow(id: "main") }
+            .disabled(store.enabledRoutine.isEmpty || store.sessionActive)
         Menu("使用情境") {
             ForEach(PauseCore.Context.allCases) { context in
                 Button((store.preferences.context == context ? "✓ " : "") + context.title) { store.preferences.context = context }
