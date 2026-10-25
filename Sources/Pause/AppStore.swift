@@ -268,7 +268,7 @@ import UniformTypeIdentifiers
             error = nil; save()
         } catch {
             // Key and file deletes are separate steps; one may have succeeded. No atomic rollback exists.
-            self.error = "清除未完成：\(error.localizedDescription)\n已保留你的偏好与统计，监测与提醒照常进行；若钥匙串 Key 已删除不会自动恢复，可重试清除。"
+            self.error = "清除未完成：\(error.localizedDescription)\n已保留你的偏好与统计，监测与提醒设置未变；若钥匙串 Key 已删除不会自动恢复，可重试清除。"
         }
     }
     func setLogin(enabled: Bool) {
