@@ -8,8 +8,7 @@ import PauseCore
     private var source: CFRunLoopSource?
     private var count = 0
     private var samples: [(TimeInterval, Int)] = []
-    private var previousCategory: AppCategory = .neutral
-    private var categorySince = ProcessInfo.processInfo.systemUptime
+    private var dwell = ContextDwell()
     private var screenAwake = true
     private var unlocked = true
     private var observers: [NSObjectProtocol] = []
@@ -17,11 +16,11 @@ import PauseCore
 
     init() {
         let nc = NSWorkspace.shared.notificationCenter
-        observers.append(nc.addObserver(forName: NSWorkspace.screensDidSleepNotification, object: nil, queue: .main) { [weak self] _ in MainActor.assumeIsolated { self?.screenAwake = false } })
+        observers.append(nc.addObserver(forName: NSWorkspace.screensDidSleepNotification, object: nil, queue: .main) { [weak self] _ in MainActor.assumeIsolated { self?.screenAwake = false; self?.dwell.reset() } })
         observers.append(nc.addObserver(forName: NSWorkspace.screensDidWakeNotification, object: nil, queue: .main) { [weak self] _ in MainActor.assumeIsolated { self?.screenAwake = true } })
-        observers.append(nc.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in MainActor.assumeIsolated { self?.screenAwake = false } })
+        observers.append(nc.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in MainActor.assumeIsolated { self?.screenAwake = false; self?.dwell.reset() } })
         let dc = DistributedNotificationCenter.default()
-        observers.append(dc.addObserver(forName: .init("com.apple.screenIsLocked"), object: nil, queue: .main) { [weak self] _ in MainActor.assumeIsolated { self?.unlocked = false } })
+        observers.append(dc.addObserver(forName: .init("com.apple.screenIsLocked"), object: nil, queue: .main) { [weak self] _ in MainActor.assumeIsolated { self?.unlocked = false; self?.dwell.reset() } })
         observers.append(dc.addObserver(forName: .init("com.apple.screenIsUnlocked"), object: nil, queue: .main) { [weak self] _ in MainActor.assumeIsolated { self?.unlocked = true } })
     }
     func startKeyboard(request: Bool) {
@@ -56,6 +55,12 @@ import PauseCore
         if let tap { CFMachPortInvalidate(tap) }
         source = nil; tap = nil; count = 0; samples = []
     }
+    /// Monitoring is over (not a mere keyboard opt-out): context dwell must not
+    /// survive the pause and trigger decisions on return.
+    func stopMonitoring() {
+        stopKeyboard()
+        dwell.reset()
+    }
     func read(preferences p: Preferences) -> (Signal, Int) {
         let now = ProcessInfo.processInfo.systemUptime
         let delta = count; count = 0
@@ -63,14 +68,14 @@ import PauseCore
         var s = Signal()
         s.keysPerMinute = Double(samples.reduce(0) { $0 + $1.1 })
         s.idleSeconds = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: UInt32.max)!)
-        s.screenAvailable = screenAvailable
+        let available = screenAvailable
+        s.screenAvailable = available
         if p.contextDetection, let front = NSWorkspace.shared.frontmostApplication {
             s.category = Classifier.category(bundleID: front.bundleIdentifier ?? "", rules: p.appRules)
             if p.protectFullscreen { s.fullscreen = Self.isFullscreen(pid: front.processIdentifier) }
             if p.protectMicrophone { s.microphoneBusy = Self.inputDeviceRunning() }
         }
-        if s.category != previousCategory { previousCategory = s.category; categorySince = now }
-        s.categorySeconds = (now - categorySince)
+        s.categorySeconds = dwell.update(category: s.category, now: now, screenAvailable: available)
         return (s, delta)
     }
     var screenAvailable: Bool {
