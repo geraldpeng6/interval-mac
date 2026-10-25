@@ -69,7 +69,7 @@ struct SessionView: View {
                             Text(item.activity.title).font(.title2.weight(.semibold))
                             Text(instruction(for: item)).font(.body).lineSpacing(6).fixedSize(horizontal: false, vertical: true)
                             Text(item.activity == .eyes ? "让视线离开屏幕，不必盯着倒计时。" : "以舒适为限；不适时随时结束。").font(.caption).foregroundStyle(.secondary)
-                            Button(store.sessionPaused ? "继续" : "暂停", systemImage: store.sessionPaused ? "play.fill" : "pause.fill") { store.sessionPaused.toggle() }.buttonStyle(.bordered)
+                            Button(store.sessionPaused ? "继续" : "暂停", systemImage: store.sessionPaused ? "play.fill" : "pause.fill") { store.toggleSessionPause() }.buttonStyle(.bordered)
                         }
                     }
                     ProgressView(value: 1 - store.sessionRemaining / Double(item.durationSeconds)).tint(.accentColor)
@@ -83,13 +83,17 @@ struct SessionView: View {
             }
         }
     }
-    private var clock: String { let s = Int(ceil(store.sessionRemaining)); return String(format: "%02d:%02d", s / 60, s % 60) }
+    private var clock: String { sessionClock(store.sessionRemaining) }
     private func instruction(for item: RoutineItem) -> String {
         let steps = item.activity.steps
         if item.activity == .eyes { return steps.joined(separator: "\n") }
         let progress = 1 - store.sessionRemaining / Double(item.durationSeconds)
         return steps[min(steps.count - 1, Int(progress * Double(steps.count)))]
     }
+}
+func sessionClock(_ remaining: Double) -> String {
+    let seconds = Int(remaining.rounded(.up))
+    return String(format: "%02d:%02d", seconds / 60, seconds % 60)
 }
 struct ReminderView: View {
     @ObservedObject var store: AppStore

@@ -28,6 +28,7 @@ import UniformTypeIdentifiers
     @Published var loginStatus = SMAppService.mainApp.status
     var showMainWindow: (() -> Void)?
     private var engine = DecisionEngine()
+    private var sessionEngine = SessionEngine()
     private let sensors = Sensors()
     private var timer: Timer?
     private var lastSample = ProcessInfo.processInfo.systemUptime
@@ -42,8 +43,8 @@ import UniformTypeIdentifiers
     private var todayIndex: Int { days.firstIndex(where: { $0.dayID == DayRecord(date: Date()).dayID }) ?? days.count - 1 }
     private var monotonicNow: TimeInterval { ProcessInfo.processInfo.systemUptime }
     var today: DayRecord { days[todayIndex] }
-    var sessionActive: Bool { !session.isEmpty && sessionIndex < session.count }
-    var currentItem: RoutineItem? { sessionActive ? session[sessionIndex] : nil }
+    var sessionActive: Bool { sessionEngine.isActive }
+    var currentItem: RoutineItem? { sessionEngine.currentItem }
     var enabledRoutine: [RoutineItem] { preferences.routine.filter(\.enabled) }
     var todayCompletions: Int { today.completed.values.reduce(0, +) }
     var weeklyDays: [DayRecord] {
@@ -111,14 +112,25 @@ import UniformTypeIdentifiers
     }
     private func tick() {
         let now = Date(); rollover()
-        let uptime = ProcessInfo.processInfo.systemUptime
+        let uptime = monotonicNow
         let elapsed = uptime - lastSessionTick; lastSessionTick = uptime
         if uptime - lastSample >= 5 { sample(now: now) }
-        if sessionActive && !sensors.screenAvailable { sessionPaused = true }
-        if sessionActive && !sessionPaused {
-            if elapsed >= 0 && elapsed <= 3 { sessionRemaining = max(0, sessionRemaining - elapsed) }
-            else { sessionPaused = true }
-            if sessionRemaining <= 0 { finishStep() }
+        if sessionEngine.isActive {
+            let events = sessionEngine.tick(elapsed: elapsed, screenAvailable: sensors.screenAvailable)
+            var completed: [Activity] = []
+            var finishedAll = false
+            for event in events {
+                if case .stepCompleted(let activity) = event { completed.append(activity) }
+                if case .allStepsCompleted = event { finishedAll = true }
+            }
+            for activity in completed {
+                days[todayIndex].completed[activity.rawValue, default: 0] += 1
+                engine.complete(activity); cloudDeferred = false
+            }
+            if !completed.isEmpty && preferences.completionSound { NSSound(named: NSSound.Name("Tink"))?.play() }
+            if finishedAll { engine.snoozeUntil = monotonicNow + 180 }
+            if !events.isEmpty { save() }
+            syncSession()
         }
         decision = engine.decide(now: monotonicNow, hour: Calendar.current.component(.hour, from: now), preferences: preferences, signal: signal, day: today)
         if reminder != nil {
@@ -189,25 +201,40 @@ import UniformTypeIdentifiers
     }
     func resumeReminders() { engine.snoozeUntil = -.greatestFiniteMagnitude; sample(now: Date()) }
     func startSession(activities: [Activity]? = nil) {
+        guard !sessionEngine.isActive else { openMainWindow(); return }
         dismissReminder(snooze: false); cloudTask?.cancel(); cloudTask = nil; revision = UUID()
-        session = activities.map { selected in selected.compactMap { a in preferences.routine.first(where: { $0.activity == a }) } } ?? enabledRoutine
-        sessionIndex = 0; sessionRemaining = Double(session.first?.durationSeconds ?? 0)
-        sessionPaused = false; sessionFinished = false; lastSessionTick = ProcessInfo.processInfo.systemUptime
+        let items = activities.map { selected in selected.compactMap { a in preferences.routine.first(where: { $0.activity == a }) } } ?? enabledRoutine
+        sessionEngine.start(items)
+        lastSessionTick = monotonicNow
+        syncSession()
+        openMainWindow()
+    }
+    func revealSession() { openMainWindow() }
+    func toggleSessionPause() {
+        // Resuming must not inherit time stalled since the last tick (e.g. the process napped while paused).
+        if sessionEngine.isPaused { sessionEngine.resume(); lastSessionTick = monotonicNow }
+        else if sessionEngine.isActive { sessionEngine.pause() }
+        syncSession()
+    }
+    func cancelSession() {
+        sessionEngine.cancel()
+        syncSession()
+        engine.snoozeUntil = monotonicNow + 180
+    }
+    private func openMainWindow() {
         showMainWindow?()
         NSApp.activate(ignoringOtherApps: true)
         NotificationCenter.default.post(name: .openIntervalWindow, object: nil)
     }
-    private func finishStep() {
-        guard let item = currentItem else { return }
-        days[todayIndex].completed[item.activity.rawValue, default: 0] += 1
-        engine.complete(item.activity); cloudDeferred = false
-        if preferences.completionSound { NSSound(named: NSSound.Name("Tink"))?.play() }
-        sessionIndex += 1
-        if sessionActive { sessionRemaining = Double(session[sessionIndex].durationSeconds) }
-        else { sessionFinished = true; engine.snoozeUntil = monotonicNow + 180 }
-        save()
+    /// Every mutation of sessionEngine must be followed by this mirror write:
+    /// the published session fields are the only thing views observe.
+    private func syncSession() {
+        session = sessionEngine.items
+        sessionIndex = sessionEngine.index
+        sessionRemaining = sessionEngine.remaining
+        sessionPaused = sessionEngine.isPaused
+        sessionFinished = sessionEngine.isFinished
     }
-    func cancelSession() { session = []; sessionFinished = false; engine.snoozeUntil = monotonicNow + 180 }
     func save() {
         guard storageWritable else { return }
         var archive = Archive(); archive.preferences = preferences; archive.days = days
