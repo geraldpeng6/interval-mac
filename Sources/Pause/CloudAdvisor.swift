@@ -81,7 +81,10 @@ enum CloudAdvisor {
     }
     static func parse(_ buffer: Data) throws -> CloudAdvice {
         struct Envelope: Decodable { struct Choice: Decodable { struct Message: Decodable { let content: String }; let message: Message }; let choices: [Choice] }
-        let envelope = try JSONDecoder().decode(Envelope.self, from: buffer)
+        // A 200 body that is not the agreed envelope (wrong endpoint, HTML error page,
+        // truncated transfer) must surface the app-defined fallback, not a raw
+        // Foundation decoding error, because the error text reaches the user verbatim.
+        guard let envelope = try? JSONDecoder().decode(Envelope.self, from: buffer) else { throw CloudError.invalidResponse }
         guard let content = envelope.choices.first?.message.content.data(using: .utf8), let advice = try? JSONDecoder().decode(CloudAdvice.self, from: content), ["allow", "defer"].contains(advice.action) else { throw CloudError.invalidResponse }
         return advice
     }
