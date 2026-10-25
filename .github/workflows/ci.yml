@@ -1,0 +1,26 @@
+name: Build and test
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  macos:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Swift version
+        run: swift --version
+      - name: Test behavior and persistence
+        run: ./scripts/check.sh
+      - name: Package Apple Silicon application
+        run: ./scripts/package.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Interval-arm64
+          path: |
+            build/Interval-*-arm64.zip
+            build/Interval-*-arm64.dmg
+            build/SHA256SUMS.txt
