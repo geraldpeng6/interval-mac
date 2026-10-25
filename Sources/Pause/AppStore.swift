@@ -249,15 +249,27 @@ import UniformTypeIdentifiers
         catch { self.error = "导出失败：\(error.localizedDescription)" }
     }
     func eraseData() {
-        cloudTask?.cancel(); cloudTask = nil; preferences = Preferences(); engine = DecisionEngine()
-        cancelSession(); sensors.stopKeyboard()
+        // Honor the stop intent at once, but persist nothing until every fallible delete succeeded:
+        // resetting preferences early would save defaults over the user's real state on failure.
+        if cloudTask != nil { cloudStatus = "云端咨询已取消" }
+        cloudTask?.cancel(); cloudTask = nil
         do {
             try APIKey.delete()
             if FileManager.default.fileExists(atPath: fileURL.path) { try FileManager.default.removeItem(at: fileURL) }
-            hasConsented = false; UserDefaults.standard.removeObject(forKey: "localConsent")
+            // Deletions succeeded — reset state. Days go first: the preferences didSet saves,
+            // and it must not rewrite the old history over the just-deleted file.
             days = [DayRecord(date: Calendar.current.startOfDay(for: Date()))]
-            storageWritable = true; error = nil; save()
-        } catch { self.error = "清除未完成：\(error.localizedDescription)" }
+            storageWritable = true
+            preferences = Preferences()
+            engine = DecisionEngine()
+            cancelSession()
+            sensors.stopKeyboard()
+            hasConsented = false; UserDefaults.standard.removeObject(forKey: "localConsent")
+            error = nil; save()
+        } catch {
+            // Key and file deletes are separate steps; one may have succeeded. No atomic rollback exists.
+            self.error = "清除未完成：\(error.localizedDescription)\n已保留你的偏好与统计，监测与提醒设置未变；若钥匙串 Key 已删除不会自动恢复，可重试清除。"
+        }
     }
     func setLogin(enabled: Bool) {
         do {
