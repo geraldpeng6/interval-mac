@@ -54,6 +54,6 @@ open "$HOME/Applications/Interval.app"
 - [隐私说明](docs/PRIVACY.md)
 - [验证记录](docs/VALIDATION.md)
 
-当前版本仍在预发布验证：原生窗口实测因本机锁屏待继续；完整边界见验证记录。
+主分支的 46 项 XCTest 已在 CI 通过；[v1.0.0-rc.1](https://github.com/geraldpeng6/interval-mac/releases/tag/v1.0.0-rc.1) 安装物仍是此前的 RC1 构建，未随这些修复重新生成或发布。原生窗口界面、真实系统权限与输入事件、真实网络与钥匙串路径尚未实测；完整边界见[验证记录](docs/VALIDATION.md)。
 
 MIT License.
