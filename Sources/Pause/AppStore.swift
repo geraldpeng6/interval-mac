@@ -102,6 +102,9 @@ import UniformTypeIdentifiers
         var archive = Archive(); archive.days = days; archive.rollover(at: Date()); days = archive.days
     }
     private func sample(now: Date) {
+        // Non-tick callers (cloud continuation, resumeReminders) can run right after midnight
+        // before the first tick; ensure today's bucket exists before any todayIndex write.
+        rollover()
         let uptime = monotonicNow
         let seconds = uptime - lastSample; lastSample = uptime
         if preferences.monitoring {
