@@ -19,7 +19,7 @@ iconutil -c icns "$INTERVAL_ICONSET" -o "$INTERVAL_APP/Contents/Resources/AppIco
 xattr -cr "$INTERVAL_APP"
 codesign --force --options runtime --sign "${INTERVAL_SIGN_IDENTITY:--}" "$INTERVAL_APP"
 codesign --verify --deep --strict "$INTERVAL_APP"
-lipo -verify_arch arm64 "$INTERVAL_APP/Contents/MacOS/Interval"
+lipo "$INTERVAL_APP/Contents/MacOS/Interval" -verify_arch arm64
 ditto -c -k --keepParent "$INTERVAL_APP" "$INTERVAL_OUTPUT/Interval-$INTERVAL_VERSION-arm64.zip"
 ln -s /Applications "$INTERVAL_STAGE/Applications"
 hdiutil create -volname "Interval" -srcfolder "$INTERVAL_STAGE" -ov -format UDZO "$INTERVAL_OUTPUT/Interval-$INTERVAL_VERSION-arm64.dmg" >/dev/null
