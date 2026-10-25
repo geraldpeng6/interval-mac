@@ -85,6 +85,8 @@ final class DecisionEngineTests: XCTestCase {
         XCTAssertEqual(engine.advance(seconds: 3600, signal: signal), 0)
         signal.screenAvailable = false
         XCTAssertEqual(engine.advance(seconds: 5, signal: signal), 0)
+        XCTAssertEqual(engine.screenSinceEyeRest, 1_200) // a brief lock is absence, not yet rest
+        for _ in 0..<3 { _ = engine.advance(seconds: 5, signal: signal) } // cumulative 20 s away
         XCTAssertEqual(engine.screenSinceEyeRest, 0)
         signal.screenAvailable = true; signal.idleSeconds = 600
         XCTAssertEqual(engine.advance(seconds: 5, signal: signal), 0)
@@ -105,6 +107,80 @@ final class DecisionEngineTests: XCTestCase {
         XCTAssertEqual(Classifier.category(bundleID: "us.zoom.xos", rules: []), .meeting)
         XCTAssertEqual(Classifier.category(bundleID: "com.apple.Safari", rules: []), .neutral)
         XCTAssertEqual(Classifier.category(bundleID: "us.zoom.xos", rules: [.init(bundleID: "us.zoom.xos", category: .productive)]), .productive)
+    }
+    func testBriefAbsencePausesAccumulationButPreservesDueReminders() {
+        var engine = DecisionEngine()
+        engine.exposure[.wrists] = 3_200
+        engine.screenSinceEyeRest = 1_200
+        var burst = Signal(); burst.idleSeconds = 1; burst.keysPerMinute = 250
+        _ = engine.advance(seconds: 10, signal: burst)
+        var locked = Signal(); locked.screenAvailable = false
+        for _ in 0..<3 { XCTAssertEqual(engine.advance(seconds: 5, signal: locked), 0) } // 15 s away
+        var back = Signal(); back.idleSeconds = 12
+        XCTAssertEqual(engine.advance(seconds: 5, signal: back), 5)
+        XCTAssertEqual(engine.screenSinceEyeRest, 1_215) // 1_200 + 10 active + 5 resumed, lock frozen
+        var p = preferences(); p.routine = [.init(.wrists, interval: 50, duration: 60, target: 0)]
+        XCTAssertEqual(engine.decide(now: instant, hour: 12, preferences: p, signal: back, day: .init(date: now)).kind, .rest(.wrists))
+    }
+    func testEyeRestCreditRequiresTwentySecondsOfUnavailableScreen() {
+        var engine = DecisionEngine()
+        engine.screenSinceEyeRest = 1_200
+        engine.exposure[.wrists] = 3_200
+        var locked = Signal(); locked.screenAvailable = false
+        for _ in 0..<3 { _ = engine.advance(seconds: 5, signal: locked) }
+        XCTAssertEqual(engine.screenSinceEyeRest, 1_200) // 15 s away is not eye rest yet
+        _ = engine.advance(seconds: 5, signal: locked) // cumulative 20 s
+        XCTAssertEqual(engine.screenSinceEyeRest, 0)
+        XCTAssertEqual(engine.exposure[.wrists] ?? 0, 3_200) // body debt needs 300 s away
+    }
+    func testReturningFromLockDoesNotInheritStaleActivityDebtOrTypingPeak() {
+        var engine = DecisionEngine()
+        var burst = Signal(); burst.idleSeconds = 1; burst.keysPerMinute = 250
+        _ = engine.advance(seconds: 10, signal: burst)
+        var locked = Signal(); locked.screenAvailable = false
+        for _ in 0..<60 { XCTAssertEqual(engine.advance(seconds: 5, signal: locked), 0) } // 300 s away
+        var back = Signal(); back.idleSeconds = 12; back.keysPerMinute = 30
+        XCTAssertEqual(engine.advance(seconds: 5, signal: back), 5)
+        XCTAssertEqual(engine.exposure[.wrists] ?? 0, 5) // one resumed sample; pre-absence debt gone
+        XCTAssertEqual(engine.recentTypingPeak, 30) // current typing only; the 250 burst is not inherited
+        XCTAssertEqual(engine.screenSinceEyeRest, 5) // only the active sample after return
+        var p = preferences(); p.routine = [.init(.wrists, interval: 50, duration: 60, target: 0)]
+        XCTAssertEqual(engine.decide(now: instant, hour: 12, preferences: p, signal: back, day: .init(date: now)).kind, .wait)
+    }
+    func testCoalescedSleepResetsDebtButNeverCountsAsScreenTime() {
+        var engine = DecisionEngine()
+        engine.exposure[.wrists] = 3_000
+        engine.recentTypingPeak = 250
+        engine.screenSinceEyeRest = 1_200
+        var away = Signal(); away.screenAvailable = false
+        XCTAssertEqual(engine.advance(seconds: 28_800, signal: away), 0)
+        XCTAssertTrue(engine.exposure.isEmpty)
+        XCTAssertEqual(engine.recentTypingPeak, 0)
+        XCTAssertEqual(engine.screenSinceEyeRest, 0)
+    }
+    func testCoalescedAvailableGapPreservesDebtAndAddsZeroScreenTime() {
+        var engine = DecisionEngine()
+        engine.exposure[.wrists] = 3_200
+        engine.recentTypingPeak = 250
+        engine.screenSinceEyeRest = 1_200
+        XCTAssertEqual(engine.advance(seconds: 3_600, signal: Signal()), 0) // available screen, no idle evidence
+        XCTAssertEqual(engine.screenSinceEyeRest, 1_200)
+        XCTAssertEqual(engine.exposure[.wrists] ?? 0, 3_200)
+        XCTAssertEqual(engine.recentTypingPeak, 250)
+        var p = preferences(); p.routine = [.init(.wrists, interval: 50, duration: 60, target: 0)]
+        var back = Signal(); back.idleSeconds = 12
+        XCTAssertEqual(engine.decide(now: instant, hour: 12, preferences: p, signal: back, day: .init(date: now)).kind, .rest(.wrists))
+    }
+    func testLongIdlePauseRetiresStaleTypingPeakForWristTiming() {
+        var engine = DecisionEngine()
+        var burst = Signal(); burst.idleSeconds = 1; burst.keysPerMinute = 250
+        _ = engine.advance(seconds: 10, signal: burst)
+        var away = Signal(); away.idleSeconds = 600
+        _ = engine.advance(seconds: 5, signal: away)
+        engine.exposure[.wrists] = 2_200
+        var back = Signal(); back.idleSeconds = 12; back.keysPerMinute = 30
+        var p = preferences(); p.routine = [.init(.wrists, interval: 50, duration: 60, target: 0)]
+        XCTAssertEqual(engine.decide(now: instant, hour: 12, preferences: p, signal: back, day: .init(date: now)).kind, .wait)
     }
     func testDailyGoalCanBringAQuietOpportunityForward() {
         var engine = DecisionEngine(); engine.exposure[.wrists] = 600

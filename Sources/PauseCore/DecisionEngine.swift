@@ -9,17 +9,34 @@ public struct DecisionEngine: Sendable {
     public var snoozeUntil: TimeInterval = -.greatestFiniteMagnitude
     public var lastReminder: TimeInterval = -.greatestFiniteMagnitude
     public var lastRefocus: TimeInterval = -.greatestFiniteMagnitude
+    private var unavailableSeconds: Double = 0
     public init() {}
 
     public mutating func advance(seconds: Double, signal: Signal) -> Double {
-        guard seconds > 0, seconds <= 30 else { return 0 } // Sleep/wake is never counted as use.
+        guard seconds > 0 else { return 0 }
         guard signal.screenAvailable else {
-            continuousScreen = 0; screenSinceEyeRest = 0; return 0
+            // Lock or display sleep is an absence. Accumulated seconds matter: a brief 5–10 s
+            // lock pauses accumulation without erasing debt, 20 s grants eye-rest credit, and
+            // 300 s away retires exposure and typing peaks, consistent with the idle path below.
+            unavailableSeconds += seconds
+            if unavailableSeconds >= 300 {
+                continuousScreen = 0; screenSinceEyeRest = 0
+                exposure = [:]
+                recentTypingPeak = 0 // A burst that ended before a long absence is stale, not recent.
+            } else if unavailableSeconds >= 20 {
+                continuousScreen = 0; screenSinceEyeRest = 0
+            }
+            return 0
         }
+        unavailableSeconds = 0
+        // A coalesced sampling gap on an available screen is not rest evidence: never counted
+        // as use, and it must not erase accumulated debt either.
+        guard seconds <= 30 else { return 0 }
         recentTypingPeak = max(signal.keysPerMinute, recentTypingPeak * exp(-seconds / 300))
         if signal.idleSeconds >= 300 && signal.category != .media && !signal.fullscreen {
             continuousScreen = 0; screenSinceEyeRest = 0
             exposure = [:]
+            recentTypingPeak = 0 // A burst that ended before a long pause is stale, not recent.
             return 0
         }
         // Reading/video is screen use too; presence cannot be inferred after prolonged inactivity.
