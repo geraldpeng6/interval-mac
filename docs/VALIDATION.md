@@ -39,6 +39,10 @@
 
 没有为这款应用填写用户的云端 HTTPS 模型和 Key，尚未进行第三方模型在线请求实测。云端响应/安全地址契约已测，网络失败采用本地结果；这不能替代真实供应商可用性验证。
 
-仓库 CI 与 Release 资产在推送后核验；预发布包供用户审阅，不应将待验证项目描述为已经验收。
+[GitHub macOS 15 arm64 / Swift 6.1.2 CI](https://github.com/geraldpeng6/interval-mac/actions/runs/40195521418) 已通过全部 17 项测试、arm64 打包及资产上传。
+
+[v1.0.0-rc.1 预发布](https://github.com/geraldpeng6/interval-mac/releases/tag/v1.0.0-rc.1) 指向 `a1d1add2d29bb97028bbe102a8624341d5f19228`，已上传 DMG、ZIP、SHA256SUMS。通过 GitHub 重新下载全部附件后，两个安装物的 SHA256 检查通过，下载 ZIP 解包后的签名和 arm64 架构检查通过。
+
+已将同一构建安装到本机 `~/Applications/Interval.app`。原生窗口验收仍被锁屏阻挡；预发布不表示已完成待验证项目。
 
 首次 GitHub macOS 15 arm64 / Swift 6.1.2 CI 的 17 项测试通过，打包的架构验证因旧版 lipo 要求先给输入文件而失败；脚本已改为输入文件在前的标准命令顺序，随后重新构建核验。

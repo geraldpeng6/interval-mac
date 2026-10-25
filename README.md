@@ -4,6 +4,8 @@
 
 SwiftUI · macOS 14+ · arm64 · 本地优先 · 无第三方依赖
 
+[下载预发布 DMG / ZIP](https://github.com/geraldpeng6/interval-mac/releases/tag/v1.0.0-rc.1)
+
 <img src="docs/images/today-light.png" alt="今日面板的 SwiftUI 组件渲染预览" width="650">
 
 [深色预览](docs/images/today-dark.png) · 预览为原生组件离屏渲染，完整窗口与交互仍待验收。
