@@ -80,7 +80,17 @@ struct PreferencesView: View {
                 Text("默认关闭。开启后仅在本地准备提醒时，向你指定的服务发送：连续使用分钟数、每分钟按键数、空闲秒数、手动情境、应用类别和拟进行活动。不会发送应用名称、Bundle ID、按键内容或每日记录。服务方可能留存这些摘要。").font(.callout).foregroundStyle(.secondary)
                 TextField("HTTPS Chat Completions 地址", text: $store.preferences.cloudEndpoint).textFieldStyle(.roundedBorder)
                 TextField("模型名称", text: $store.preferences.cloudModel).textFieldStyle(.roundedBorder)
-                HStack { SecureField("API Key（仅保存于 macOS 钥匙串）", text: $key).textFieldStyle(.roundedBorder); Button("保存 Key") { do { try APIKey.save(key); key = ""; keyStatus = "已保存到钥匙串" } catch { keyStatus = error.localizedDescription } }.disabled(key.isEmpty); Button("删除 Key") { do { try APIKey.delete(); keyStatus = "已删除" } catch { keyStatus = error.localizedDescription } } }
+                HStack { SecureField("API Key（仅保存于 macOS 钥匙串）", text: $key).textFieldStyle(.roundedBorder); Button("保存 Key") { do { try APIKey.save(key); key = ""; keyStatus = "已保存到钥匙串" } catch { keyStatus = error.localizedDescription } }.disabled(key.isEmpty); Button("删除 Key") {
+                    do {
+                        try APIKey.delete()
+                        // A deleted key must not leave cloud advice enabled or an in-flight consult alive.
+                        // Assign only when enabled: a redundant write would also dismiss a visible reminder.
+                        if store.preferences.cloudEnabled {
+                            store.preferences.cloudEnabled = false
+                            keyStatus = "已删除，云端建议已关闭"
+                        } else { keyStatus = "已删除" }
+                    } catch { keyStatus = error.localizedDescription }
+                } }
                 if !keyStatus.isEmpty { Text(keyStatus).font(.caption).foregroundStyle(.secondary) }
                 Text(store.cloudStatus).font(.caption).foregroundStyle(.secondary)
                 Text("兼容 OpenAI Chat Completions 的 HTTPS 服务。云端只能允许或延后一次（5 分钟），不能绕过保护；8 秒超时或响应异常回退本地。API Key 只发给当前填写的地址，修改地址前请核对服务方。").font(.caption).foregroundStyle(.secondary)
