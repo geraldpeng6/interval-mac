@@ -9,6 +9,10 @@ import UniformTypeIdentifiers
     @Published var preferences: Preferences {
         didSet {
             if oldValue.cloudEndpoint != preferences.cloudEndpoint || oldValue.cloudModel != preferences.cloudModel { preferences.cloudEnabled = false }
+            // Explicit monitoring-off must reset context dwell now, not at the next
+            // sample (a <5 s pause/resume inside a sample period would carry it over).
+            // A keyboard-only opt-out keeps the context: preferencesChanged's stopKeyboard.
+            if oldValue.monitoring && !preferences.monitoring { sensors.stopMonitoring() }
             preferencesChanged()
         }
     }
@@ -106,7 +110,7 @@ import UniformTypeIdentifiers
                 days[todayIndex].keyCount += keys
             }
         } else {
-            sensors.stopKeyboard(); signal = Signal(); keyboardAvailable = false
+            sensors.stopMonitoring(); signal = Signal(); keyboardAvailable = false
         }
         decision = engine.decide(now: monotonicNow, hour: Calendar.current.component(.hour, from: now), preferences: preferences, signal: signal, day: today)
     }
