@@ -73,8 +73,12 @@ import UniformTypeIdentifiers
         if !hasConsented { preferences.monitoring = false }
         error = loadError; storageWritable = loadError == nil
         if preferences.monitoring && preferences.keyboardEnabled { sensors.startKeyboard(request: false) }
-        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in MainActor.assumeIsolated { self?.tick() } }
-        timer?.tolerance = 0.2
+        // Unscheduled + added to .common so ticks keep firing during menu tracking and modal panels
+        // (scheduledTimer only uses .default, which stalls there and leaves a discarded elapsed gap).
+        let tickTimer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in MainActor.assumeIsolated { self?.tick() } }
+        tickTimer.tolerance = 0.2
+        RunLoop.main.add(tickTimer, forMode: .common)
+        timer = tickTimer
     }
     func consentAndStart() {
         hasConsented = true; UserDefaults.standard.set(true, forKey: "localConsent")
