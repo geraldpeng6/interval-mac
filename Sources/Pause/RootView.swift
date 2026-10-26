@@ -60,7 +60,6 @@ struct RootView: View {
         // One continuous sidebar/detail divider: the two-column default draws two
         // abutting rounded backgrounds that leave a visible gap in the middle.
         .navigationSplitViewStyle(.balanced)
-        .background(Color(nsColor: .windowBackgroundColor), ignoresSafeAreaEdges: .all)
         .onAppear {
             let action = openWindow
             store.showMainWindow = { action(id: "main"); NSApp.activate(ignoringOtherApps: true) }

@@ -24,6 +24,9 @@ import AppKit
         }
         .defaultSize(width: 1020, height: 740)
         .windowResizability(.contentMinSize)
+        // The sidebar carries the brand; a title label in the toolbar would sit
+        // on its own material patch next to the sidebar's titlebar segment.
+        .windowToolbarStyle(.unified(showsTitle: false))
         .commands {
             CommandGroup(replacing: .newItem) {}
             CommandGroup(after: .appInfo) {
