@@ -1,0 +1,93 @@
+name: Release
+
+# Tag-triggered and manually dispatched release pipeline.
+# Pull-request CI (ci.yml) stays contents: read; only this job writes releases.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing v-tag on main ancestry to release (e.g. v1.0.0-rc.2)'
+        required: true
+        type: string
+
+permissions: {}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  release:
+    name: Test, package, publish release
+    runs-on: macos-15
+    permissions:
+      contents: write
+    env:
+      # Built-in repo token only; no PAT or extra secrets.
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check out release target
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - name: Validate tag against committed version metadata
+        env:
+          # Dispatch input reaches the shell only via the environment, never
+          # by expression interpolation into the run script.
+          DISPATCH_TAG: ${{ inputs.tag }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            TAG="${DISPATCH_TAG}"
+          fi
+          ./scripts/version.sh check-tag "${TAG}"
+          echo "RELEASE_TAG=${TAG}" >> "$GITHUB_ENV"
+
+      - name: Require existing tag on main ancestry
+        run: |
+          if ! git cat-file -e "refs/tags/${RELEASE_TAG}^{commit}" 2>/dev/null; then
+            echo "::error::Tag ${RELEASE_TAG} does not exist in this repository" >&2
+            exit 1
+          fi
+          git fetch origin main
+          if ! git merge-base --is-ancestor "refs/tags/${RELEASE_TAG}" origin/main; then
+            echo "::error::Tag ${RELEASE_TAG} is not on main ancestry; refusing to release an arbitrary branch or unversioned main build" >&2
+            exit 1
+          fi
+
+      - name: Run behavior and version metadata tests
+        run: ./scripts/check.sh
+
+      - name: Package application (ZIP, DMG, SHA256SUMS)
+        run: ./scripts/package.sh
+
+      - name: Determine release channel
+        run: |
+          echo "RELEASE_CHANNEL=$(./scripts/version.sh channel "${RELEASE_TAG#v}")" >> "$GITHUB_ENV"
+
+      - name: Publish release after all checks
+        run: |
+          ls build/Interval-*-arm64.zip build/Interval-*-arm64.dmg build/SHA256SUMS.txt
+          flags=()
+          if [ "${RELEASE_CHANNEL}" = "prerelease" ]; then
+            flags+=(--prerelease)
+          fi
+          if gh release view "${RELEASE_TAG}" --json isDraft >/dev/null 2>&1; then
+            draft="$(gh release view "${RELEASE_TAG}" --json isDraft --jq '.isDraft')"
+            if [ "${draft}" != "true" ]; then
+              echo "::error::Release ${RELEASE_TAG} is already published; refusing to clobber it" >&2
+              exit 1
+            fi
+            echo "Reusing existing draft release for ${RELEASE_TAG}"
+          else
+            gh release create "${RELEASE_TAG}" --draft --verify-tag \
+              --title "Interval ${RELEASE_TAG}" --generate-notes "${flags[@]}"
+          fi
+          # Draft stays draft until every asset is uploaded.
+          gh release upload "${RELEASE_TAG}" \
+            build/Interval-*-arm64.zip build/Interval-*-arm64.dmg build/SHA256SUMS.txt --clobber
+          gh release edit "${RELEASE_TAG}" "${flags[@]}" --draft=false
