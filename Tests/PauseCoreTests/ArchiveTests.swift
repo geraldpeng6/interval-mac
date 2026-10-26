@@ -36,6 +36,21 @@ final class ArchiveTests: XCTestCase {
         XCTAssertTrue(restored.preferences.completionSound)
         XCTAssertEqual(restored.days[0].count(.eyes), 3)
     }
+    func testUpdateAutoCheckRoundTripsAndOldArchivesDefaultToOn() throws {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: file) }
+        var archive = Archive(); archive.rollover(at: Date())
+        archive.preferences.updateAutoCheck = false
+        try archive.save(to: file)
+        XCTAssertFalse(try Archive.load(from: file).preferences.updateAutoCheck)
+        // An archive written before the updater existed enables automatic checks
+        // (the documented default) without touching any other preference.
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(archive)) as? [String: Any])
+        var preferences = try XCTUnwrap(json["preferences"] as? [String: Any])
+        preferences.removeValue(forKey: "updateAutoCheck"); json["preferences"] = preferences
+        try JSONSerialization.data(withJSONObject: json).write(to: file)
+        XCTAssertTrue(try Archive.load(from: file).preferences.updateAutoCheck)
+    }
     func testTimeZoneChangePreservesDailyRecords() {
         var utc = Calendar(identifier: .gregorian); utc.timeZone = TimeZone(secondsFromGMT: 0)!
         var taipei = utc; taipei.timeZone = TimeZone(identifier: "Asia/Taipei")!

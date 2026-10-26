@@ -3,10 +3,22 @@ import AppKit
 
 @main struct IntervalApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
-    @StateObject private var store = AppStore()
+    @StateObject private var store: AppStore
+    @StateObject private var updates: UpdateEngine
+    init() {
+        let store = AppStore()
+        _store = StateObject(wrappedValue: store)
+        let engine = UpdateEngine.production()
+        // Wired at launch, not on window appearance: the app regularly runs as a
+        // menu-bar-only process with no window, and both the install-time session
+        // re-check and the automatic check schedule must not depend on one.
+        engine.attach(sessionActive: { store.sessionActive })
+        engine.setAutoCheck(store.preferences.updateAutoCheck)
+        _updates = StateObject(wrappedValue: engine)
+    }
     var body: some Scene {
         Window("间歇 · Interval", id: "main") {
-            RootView(store: store)
+            RootView(store: store, updates: updates)
                 .frame(minWidth: 860, minHeight: 650)
                 .onAppear { delegate.store = store }
         }
@@ -24,7 +36,7 @@ import AppKit
             }
         }
         MenuBarExtra {
-            MenuContent(store: store)
+            MenuContent(store: store, updates: updates)
         } label: {
             Label {
                 Text("间歇")
@@ -55,6 +67,7 @@ import AppKit
 }
 struct MenuContent: View {
     @ObservedObject var store: AppStore
+    @ObservedObject var updates: UpdateEngine
     @Environment(\.openWindow) var openWindow
     var body: some View {
         Text("间歇 · 今天已完成 \(store.todayCompletions) 次活动")
@@ -84,6 +97,16 @@ struct MenuContent: View {
         if store.hasConsented {
             Button(store.preferences.monitoring ? "暂停监测" : "继续监测") { store.preferences.monitoring.toggle() }
         }
+        Divider()
+        Text("当前版本 \(updates.currentVersionDisplay)")
+        Text(updates.statusText)
+        if let notice = updates.notice { Text(notice) }
+        Button("检查更新") { updates.checkForUpdates() }.disabled(!updates.canCheck)
+        if updates.isReady {
+            Button("更新") { updates.updateButtonPressed() }.disabled(store.sessionActive)
+            if store.sessionActive { Text("请先完成或结束当前活动") }
+        }
+        if updates.isFailed { Button("重试") { updates.checkForUpdates() } }
         Divider()
         Button("退出间歇") { store.save(); NSApp.terminate(nil) }.keyboardShortcut("q")
     }

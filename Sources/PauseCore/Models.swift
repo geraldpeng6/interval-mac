@@ -92,8 +92,12 @@ public struct Preferences: Codable, Sendable {
     public var cloudEnabled = false
     public var cloudEndpoint = "https://api.openai.com/v1/chat/completions"
     public var cloudModel = ""
+    /// App update checks against this repository's public GitHub Releases.
+    /// Separate from the optional cloud advice: turning this off only stops the
+    /// automatic update checks/downloads, never the health cloud toggle or key.
+    public var updateAutoCheck = true
     public init() {}
-    private enum CodingKeys: String, CodingKey { case monitoring, keyboardEnabled, contextDetection, protectFullscreen, protectMicrophone, distractionHints, completionSound, context, highTypingThreshold, quietStart, quietEnd, quietHours, routine, appRules, cloudEnabled, cloudEndpoint, cloudModel }
+    private enum CodingKeys: String, CodingKey { case monitoring, keyboardEnabled, contextDetection, protectFullscreen, protectMicrophone, distractionHints, completionSound, context, highTypingThreshold, quietStart, quietEnd, quietHours, routine, appRules, cloudEnabled, cloudEndpoint, cloudModel, updateAutoCheck }
     public init(from decoder: Decoder) throws {
         self.init()
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -114,6 +118,7 @@ public struct Preferences: Codable, Sendable {
         cloudEnabled = try c.decodeIfPresent(Bool.self, forKey: .cloudEnabled) ?? cloudEnabled
         cloudEndpoint = try c.decodeIfPresent(String.self, forKey: .cloudEndpoint) ?? cloudEndpoint
         cloudModel = try c.decodeIfPresent(String.self, forKey: .cloudModel) ?? cloudModel
+        updateAutoCheck = try c.decodeIfPresent(Bool.self, forKey: .updateAutoCheck) ?? updateAutoCheck
     }
     public mutating func normalize() {
         highTypingThreshold = min(600, max(30, highTypingThreshold))

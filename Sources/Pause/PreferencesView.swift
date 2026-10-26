@@ -4,6 +4,7 @@ import ServiceManagement
 
 struct PreferencesView: View {
     @ObservedObject var store: AppStore
+    @ObservedObject var updates: UpdateEngine
     @State private var bundleID = ""
     @State private var category: AppCategory = .distracting
     @State private var key = ""
@@ -70,6 +71,26 @@ struct PreferencesView: View {
         }
         Surface {
             VStack(alignment: .leading, spacing: 16) {
+                Text("软件更新").font(.headline)
+                Text("当前版本 \(updates.currentVersionDisplay)").font(.callout)
+                Text(updates.statusText).font(.callout).foregroundStyle(.secondary)
+                if let notice = updates.notice { Text(notice).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
+                HStack {
+                    Button("检查更新") { updates.checkForUpdates() }.disabled(!updates.canCheck)
+                    Button("更新") { updates.updateButtonPressed() }
+                        .disabled(!updates.isReady || store.sessionActive)
+                    if updates.isFailed { Button("重试") { updates.checkForUpdates() } }
+                }
+                if updates.isReady && store.sessionActive {
+                    Text("请先完成或结束当前活动").font(.caption).foregroundStyle(.secondary)
+                }
+                Divider()
+                Toggle("自动检查更新", isOn: $store.preferences.updateAutoCheck)
+                Text("默认开启。会定期访问 GitHub（本应用的发布页）获取版本信息，发现新版本后在后台下载安装包；不会上传任何使用数据。关闭后不再自动访问网络，仍可手动检查。安装永远需要你在确认框中再次确认。").font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        Surface {
+            VStack(alignment: .leading, spacing: 16) {
                 HStack { Text("可选的云端时机建议").font(.headline); Spacer(); Toggle("启用", isOn: Binding(get: { store.preferences.cloudEnabled }, set: { if $0 {
                     do {
                         _ = try CloudAdvisor.endpoint(store.preferences.cloudEndpoint)
@@ -103,6 +124,7 @@ struct PreferencesView: View {
 }
 struct PrivacyView: View {
     @ObservedObject var store: AppStore
+    @ObservedObject var updates: UpdateEngine
     @State private var erase = false
     var body: some View {
         Heading(title: "你的数据，留在你这里。", subtitle: "本地是默认选项，不需要账户，也没有遥测、广告或分析 SDK。")
@@ -115,6 +137,8 @@ struct PrivacyView: View {
                 privacyRow("只存每日汇总", "最近 30 天的屏幕使用估算、按键总数、活动完成次数和提醒次数，以及你的偏好。原始事件不落盘。", "externaldrive")
                 Divider()
                 privacyRow("云端由你决定", "默认不联网。开启云端后仅发送偏好设置中列出的摘要。Key 存于本机钥匙串，导出文件不包含 Key。", "cloud")
+                Divider()
+                privacyRow("更新检查只访问 GitHub", "默认定期访问 GitHub 获取本应用的发布版本信息，发现新版本后自动下载安装包；不上传使用数据，发送内容仅限链接所需的 IP 与时间。关闭「自动检查更新」后不再自动联网，仍可手动检查。安装前会校验完整性、签名与身份，并需要你再次确认。", "arrow.triangle.2.circlepath")
             }
         }
         Surface {
