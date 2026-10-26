@@ -50,11 +50,11 @@ struct RootView: View {
                 .frame(maxWidth: 980, alignment: .leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            // The content background must extend under the titlebar, or resizing
-            // the window leaves a sliver of stale background above the scroll
-            // edge (the "extra bit at the top" artifact).
+            // Only the background color extends under the titlebar (covering the
+            // resize seam); the content itself keeps the safe-area inset, so the
+            // first heading is never covered. Putting .ignoresSafeArea on the
+            // scroll view itself would slide content beneath the titlebar.
             .background(Color(nsColor: .windowBackgroundColor).ignoresSafeArea(edges: .top))
-            .ignoresSafeArea(edges: .top)
         }
         .tint(intervalAccent)
         // One continuous sidebar/detail divider: the two-column default draws two
