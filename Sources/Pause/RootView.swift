@@ -55,6 +55,11 @@ struct RootView: View {
             // first heading is never covered. Putting .ignoresSafeArea on the
             // scroll view itself would slide content beneath the titlebar.
             .background(Color(nsColor: .windowBackgroundColor).ignoresSafeArea(edges: .top))
+            // Hide the toolbar's own material: its opaque tint differs from the
+            // content background and shows as a darker band with a seam where it
+            // meets the sidebar. With it hidden, the whole detail column is one
+            // flat color and the divider reads as a single continuous line.
+            .toolbarBackground(.hidden, for: .windowToolbar)
         }
         .tint(intervalAccent)
         // One continuous sidebar/detail divider: the two-column default draws two
