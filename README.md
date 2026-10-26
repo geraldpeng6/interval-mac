@@ -26,6 +26,8 @@ SwiftUI · macOS 14+ · arm64 · 本地优先 · 无第三方依赖
 
 当前默认构建为 **ad-hoc 签名、未公证**。从网络下载后 macOS 可能拦截；自行审阅来源后，可按系统“隐私与安全性”页面的提示允许打开。不要关闭系统安全保护。它没有经过 App Store 审核。
 
+已发布的 v1.0.0-rc.1 及更早版本**应用内没有更新器**：升级到新版本需手动下载 DMG/ZIP 重新安装。应用内自动下载与安装尚未实现，后续单独加入；下载渠道为本仓库公开的 GitHub Releases。
+
 关闭窗口后仍在菜单栏运行。完全退出请用菜单栏“退出间歇”。登录启动由用户在偏好设置手动启用。
 
 ## 本地构建
@@ -35,13 +37,23 @@ SwiftUI · macOS 14+ · arm64 · 本地优先 · 无第三方依赖
 ```sh
 ./scripts/check.sh
 ./scripts/package.sh
-ditto -x -k build/Interval-1.0.0-arm64.zip "$HOME/Applications"
+ditto -x -k build/Interval-1.0.0-rc.2-arm64.zip "$HOME/Applications"
 open "$HOME/Applications/Interval.app"
 ```
 
 也可在 Xcode 打开 `Package.swift` 编辑。打包脚本构建原生 arm64 release，验证签名和架构，再生成 ZIP、DMG 与 SHA256。默认将 Swift 临时构建目录放在系统临时目录，避免 iCloud Documents 的 Finder 扩展属性污染测试包签名。
 
+应用版本只有一个来源：仓库根目录的 `VERSION`（完整 semver，如 `1.0.0-rc.2`）与 `BUILD_NUMBER`（单调递增的数字构建号）。打包写入 `CFBundleShortVersionString`（纯数字 `1.0.0`）、`CFBundleVersion`（构建号）和自定义键 `IntervalFullVersion`（完整版本，供展示与后续更新器的预发布比较）。设置 `INTERVAL_OUTPUT` 可把产物输出到其他目录；脚本只在自身临时目录内操作并在退出时清理。发布流程见 [docs/RELEASING.md](docs/RELEASING.md)。
+
 如拥有适用的签名证书，可设置 `INTERVAL_SIGN_IDENTITY`；发布前仍需自行完成 Apple 公证及 stapling，脚本不会宣称仅签名就已公证。
+
+## 发布
+
+- **推送 `v` tag 自动发布**：推送与提交的 `VERSION`、`BUILD_NUMBER` 一致的 tag（如 `v1.0.0-rc.2`）会触发 Release 工作流——先跑完整测试与打包校验，全部通过后才把 ZIP、DMG 与 SHA256 上传到本仓库 Releases，并从 draft 转为正式发布；带预发布号的版本标记为 prerelease 渠道。已存在正式 release 的 tag 会被拒绝，不会被覆盖。
+- **main 上的普通 push 与 PR 只跑 CI 测试**（只读权限），不发布任何东西。
+- **手动 workflow_dispatch** 只接受已存在于 main 历史中的 tag（重跑或补发用），不会从任意分支或未打版本的 main 构建发布。
+
+当前 Releases 仍只有 [v1.0.0-rc.1](https://github.com/geraldpeng6/interval-mac/releases/tag/v1.0.0-rc.1)；本批发布准备（工作流、版本元数据、文档）尚未打 tag 或发布，详见 [docs/RELEASING.md](docs/RELEASING.md)。
 
 ## 智能判断的边界
 
