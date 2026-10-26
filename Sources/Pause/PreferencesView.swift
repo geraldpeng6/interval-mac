@@ -25,6 +25,12 @@ struct PreferencesView: View {
                 HStack { Button("打开输入监控设置") { NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent")!) }; Text("授权后若未生效，请退出并重新打开间歇。").font(.caption).foregroundStyle(.secondary) }
                 Divider()
                 Toggle("活动完成时播放轻提示（便于远眺时知道结束）", isOn: $store.preferences.completionSound)
+                HStack {
+                    Picker("活动音景", selection: Binding(get: { store.preferences.soundscape }, set: { store.setSoundscape($0) })) {
+                        ForEach(PauseCore.SoundscapePref.allCases) { Text($0.title).tag($0) }
+                    }.frame(width: 200)
+                    Text("活动进行时播放的内置声音，循环且本地生成，无网络访问；随活动暂停而减弱，结束即停。").font(.caption).foregroundStyle(.secondary)
+                }
                 Toggle("登录时启动", isOn: Binding(get: { store.loginStatus == .enabled }, set: { store.setLogin(enabled: $0) }))
                 if store.loginStatus == .requiresApproval { Button("需要在系统设置允许登录启动") { SMAppService.openSystemSettingsLoginItems() } }
                 Text("关闭窗口后仍留在菜单栏；可从菜单栏完全退出。").font(.caption).foregroundStyle(.secondary)

@@ -9,6 +9,9 @@ import UniformTypeIdentifiers
     @Published var preferences: Preferences {
         didSet {
             if oldValue.cloudEndpoint != preferences.cloudEndpoint || oldValue.cloudModel != preferences.cloudModel { preferences.cloudEnabled = false }
+            // The soundscape engine always mirrors the stored preference so any
+            // write path (picker, eraseData reset, restore) stays in sync.
+            if oldValue.soundscape != preferences.soundscape { sounds.selection = Soundscape.from(preferences.soundscape) }
             // Explicit monitoring-off must reset context dwell now, not at the next
             // sample (a <5 s pause/resume inside a sample period would carry it over).
             // A keyboard-only opt-out keeps the context: preferencesChanged's stopKeyboard.
@@ -30,6 +33,8 @@ import UniformTypeIdentifiers
     @Published var sessionFinished = false
     @Published var reminder: Decision?
     @Published var loginStatus = SMAppService.mainApp.status
+    /// Built-in soundscape playback; follows the guided session automatically.
+    let sounds = SoundEngine()
     var showMainWindow: (() -> Void)?
     private var engine = DecisionEngine()
     private var sessionEngine = SessionEngine()
@@ -42,6 +47,8 @@ import UniformTypeIdentifiers
     private var cloudDeferred = false
     private var revision = UUID()
     private var panel: NSPanel?
+    /// Floating guide window shown while a session runs (nil when hidden).
+    private var sessionWindow: SessionPanelController?
     private let fileURL: URL
     private var storageWritable = true
     private var todayIndex: Int { days.firstIndex(where: { $0.dayID == DayRecord(date: Date()).dayID }) ?? days.count - 1 }
@@ -69,6 +76,7 @@ import UniformTypeIdentifiers
         }
         state.preferences.normalize(); state.rollover(at: Date())
         preferences = state.preferences; days = state.days
+        sounds.selection = Soundscape.from(state.preferences.soundscape)
         hasConsented = UserDefaults.standard.bool(forKey: "localConsent")
         if !hasConsented { preferences.monitoring = false }
         error = loadError; storageWritable = loadError == nil
@@ -218,6 +226,7 @@ import UniformTypeIdentifiers
         sessionEngine.start(items)
         lastSessionTick = monotonicNow
         syncSession()
+        showSessionGuide()
         openMainWindow()
     }
     func revealSession() { openMainWindow() }
@@ -230,6 +239,7 @@ import UniformTypeIdentifiers
     func cancelSession() {
         sessionEngine.cancel()
         syncSession()
+        hideSessionGuide()
         engine.snoozeUntil = monotonicNow + 180
     }
     private func openMainWindow() {
@@ -245,12 +255,27 @@ import UniformTypeIdentifiers
         sessionRemaining = sessionEngine.remaining
         sessionPaused = sessionEngine.isPaused
         sessionFinished = sessionEngine.isFinished
+        // The soundscape follows the guided session: plays while a step runs,
+        // ducks when paused, and fades out when the group ends or is cancelled.
+        sounds.sessionActive = sessionEngine.isActive
+        sounds.sessionPaused = sessionEngine.isPaused
+        sessionWindow?.sync(store: self)
     }
     func save() {
         guard storageWritable else { return }
         var archive = Archive(); archive.preferences = preferences; archive.days = days
         do { try archive.save(to: fileURL); lastSave = monotonicNow }
         catch { self.error = "本地保存失败：\(error.localizedDescription)" }
+    }
+
+    /// Shows the floating activity guide (idempotent); used by every session start.
+    func showSessionGuide() {
+        if sessionWindow == nil { sessionWindow = SessionPanelController() }
+        sessionWindow?.show(store: self)
+    }
+    func hideSessionGuide() {
+        sessionWindow?.hide()
+        sessionWindow = nil
     }
     func exportData() {
         let panel = NSSavePanel(); panel.allowedContentTypes = [.json]; panel.nameFieldStringValue = "Interval-local-data.json"
@@ -287,6 +312,12 @@ import UniformTypeIdentifiers
             if enabled { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
             loginStatus = SMAppService.mainApp.status
         } catch { self.error = "登录启动设置失败：\(error.localizedDescription)" }
+    }
+
+    /// Persists the soundscape selection. The engine mirror lives in the
+    /// preferences didSet, so every write path stays in sync.
+    func setSoundscape(_ pref: SoundscapePref) {
+        preferences.soundscape = pref
     }
     func addFrontAppRule(_ category: AppCategory) {
         guard let app = NSWorkspace.shared.runningApplications.first(where: { $0.isActive && $0.bundleIdentifier != Bundle.main.bundleIdentifier }), let id = app.bundleIdentifier else { return }

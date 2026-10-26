@@ -60,7 +60,10 @@ import AppKit
 @MainActor final class AppDelegate: NSObject, NSApplicationDelegate {
     weak var store: AppStore?
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
-    func applicationWillTerminate(_ notification: Notification) { store?.save() }
+    func applicationWillTerminate(_ notification: Notification) {
+        store?.sounds.stop()
+        store?.save()
+    }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         store?.showMainWindow?(); return true
     }
@@ -90,6 +93,11 @@ struct MenuContent: View {
         Menu("使用情境") {
             ForEach(PauseCore.Context.allCases) { context in
                 Button((store.preferences.context == context ? "✓ " : "") + context.title) { store.preferences.context = context }
+            }
+        }
+        Menu("活动音景") {
+            ForEach(PauseCore.SoundscapePref.allCases) { pref in
+                Button((store.preferences.soundscape == pref ? "✓ " : "") + pref.title) { store.setSoundscape(pref) }
             }
         }
         Button("稍后 15 分钟提醒") { store.snooze(minutes: 15) }

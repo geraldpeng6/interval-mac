@@ -69,7 +69,13 @@ struct SessionView: View {
                             Text(item.activity.title).font(.title2.weight(.semibold))
                             Text(instruction(for: item)).font(.body).lineSpacing(6).fixedSize(horizontal: false, vertical: true)
                             Text(item.activity == .eyes ? "让视线离开屏幕，不必盯着倒计时。" : "以舒适为限；不适时随时结束。").font(.caption).foregroundStyle(.secondary)
-                            Button(store.sessionPaused ? "继续" : "暂停", systemImage: store.sessionPaused ? "play.fill" : "pause.fill") { store.toggleSessionPause() }.buttonStyle(.bordered)
+                            HStack {
+                                Button(store.sessionPaused ? "继续" : "暂停", systemImage: store.sessionPaused ? "play.fill" : "pause.fill") { store.toggleSessionPause() }.buttonStyle(.bordered)
+                                Picker("", selection: Binding(get: { store.preferences.soundscape }, set: { store.setSoundscape($0) })) {
+                                    ForEach(PauseCore.SoundscapePref.allCases) { Text($0.title).tag($0) }
+                                }.labelsHidden().frame(width: 120)
+                                .accessibilityLabel("活动音景")
+                            }
                         }
                     }
                     ProgressView(value: 1 - store.sessionRemaining / Double(item.durationSeconds)).tint(.accentColor)

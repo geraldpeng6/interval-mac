@@ -45,10 +45,22 @@ struct RootView: View {
                     case .settings: PreferencesView(store: store, updates: updates)
                     case .privacy: PrivacyView(store: store, updates: updates)
                     }
-                }.padding(32).frame(maxWidth: 980, alignment: .leading).frame(maxWidth: .infinity)
-            }.background(Color(nsColor: .windowBackgroundColor))
+                }
+                .padding(32)
+                .frame(maxWidth: 980, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            // The content background must extend under the titlebar, or resizing
+            // the window leaves a sliver of stale background above the scroll
+            // edge (the "extra bit at the top" artifact).
+            .background(Color(nsColor: .windowBackgroundColor).ignoresSafeArea(edges: .top))
+            .ignoresSafeArea(edges: .top)
         }
         .tint(intervalAccent)
+        // One continuous sidebar/detail divider: the two-column default draws two
+        // abutting rounded backgrounds that leave a visible gap in the middle.
+        .navigationSplitViewStyle(.balanced)
+        .background(Color(nsColor: .windowBackgroundColor), ignoresSafeAreaEdges: .all)
         .onAppear {
             let action = openWindow
             store.showMainWindow = { action(id: "main"); NSApp.activate(ignoringOtherApps: true) }

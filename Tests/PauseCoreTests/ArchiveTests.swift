@@ -51,6 +51,29 @@ final class ArchiveTests: XCTestCase {
         try JSONSerialization.data(withJSONObject: json).write(to: file)
         XCTAssertTrue(try Archive.load(from: file).preferences.updateAutoCheck)
     }
+    func testSoundscapePreferenceRoundTripsAndOldArchivesDefaultToOff() throws {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: file) }
+        var archive = Archive(); archive.rollover(at: Date())
+        archive.preferences.soundscape = .rain
+        try archive.save(to: file)
+        XCTAssertEqual(try Archive.load(from: file).preferences.soundscape, .rain)
+        // Archives written before soundscapes existed default to silent playback.
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(archive)) as? [String: Any])
+        var preferences = try XCTUnwrap(json["preferences"] as? [String: Any])
+        preferences.removeValue(forKey: "soundscape"); json["preferences"] = preferences
+        try JSONSerialization.data(withJSONObject: json).write(to: file)
+        XCTAssertEqual(try Archive.load(from: file).preferences.soundscape, .none)
+    }
+    func testSoundscapeMirrorEnumsStayAlignedWithPlaybackFiles() {
+        // The UI/storage enum (PauseCore) and the playback enum (Pause) are two
+        // hand-maintained mirrors; a case added to one side only would silently
+        // fall back to silence. Raw values must map 1:1 and cover the packaged
+        // sound files (see scripts/make-sounds.swift).
+        let storage = SoundscapePref.allCases.map(\.rawValue).sorted()
+        let playback = ["evening-pad", "forest", "none", "rain", "white-noise"]
+        XCTAssertEqual(storage, playback)
+    }
     func testTimeZoneChangePreservesDailyRecords() {
         var utc = Calendar(identifier: .gregorian); utc.timeZone = TimeZone(secondsFromGMT: 0)!
         var taipei = utc; taipei.timeZone = TimeZone(identifier: "Asia/Taipei")!
