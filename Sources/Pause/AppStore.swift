@@ -31,6 +31,13 @@ import UniformTypeIdentifiers
     @Published var sessionRemaining = 0.0
     @Published var sessionPaused = false
     @Published var sessionFinished = false
+    /// Why the session clock is stopped (mirrors sessionEngine.pauseReason);
+    /// the fullscreen pause cover phrases itself differently per reason.
+    @Published var sessionPauseReason: SessionEngine.PauseReason?
+    /// Whether the immersive fullscreen guide window is up. Derived from the
+    /// controller's state (shown on start, hidden by Esc/button/cancel/sync);
+    /// read by the keyDown monitor's guard.
+    @Published var fullscreenGuideVisible = false
     @Published var reminder: Decision?
     @Published var loginStatus = SMAppService.mainApp.status
     /// Built-in soundscape playback; follows the guided session automatically.
@@ -49,6 +56,8 @@ import UniformTypeIdentifiers
     private var panel: NSPanel?
     /// Floating guide window shown while a session runs (nil when hidden).
     private var sessionWindow: SessionPanelController?
+    /// Immersive fullscreen guide (nil when hidden).
+    private var fullscreenWindow: FullscreenGuideController?
     private let fileURL: URL
     private var storageWritable = true
     private var todayIndex: Int { days.firstIndex(where: { $0.dayID == DayRecord(date: Date()).dayID }) ?? days.count - 1 }
@@ -66,8 +75,12 @@ import UniformTypeIdentifiers
         }
     }
 
-    init() {
-        fileURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Interval/state.json")
+    /// - Parameter storageURL: Overrides the persisted-state location. Tests
+    ///   inject a temporary file so they never read or write the real
+    ///   ~/Library/Application Support/Interval/state.json; the app default
+    ///   keeps the historical path.
+    init(storageURL: URL? = nil) {
+        fileURL = storageURL ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Interval/state.json")
         var state = Archive()
         var loadError: String?
         if FileManager.default.fileExists(atPath: fileURL.path) {
@@ -226,8 +239,11 @@ import UniformTypeIdentifiers
         sessionEngine.start(items)
         lastSessionTick = monotonicNow
         syncSession()
-        showSessionGuide()
+        // Main window first, then the fullscreen guide: the panel must end up
+        // the key window (openMainWindow activates the app, which would
+        // otherwise take key from it) so Esc works from the first second.
         openMainWindow()
+        showFullscreenGuide()
     }
     func revealSession() { openMainWindow() }
     func toggleSessionPause() {
@@ -240,6 +256,7 @@ import UniformTypeIdentifiers
         sessionEngine.cancel()
         syncSession()
         hideSessionGuide()
+        hideFullscreenGuide()
         engine.snoozeUntil = monotonicNow + 180
     }
     private func openMainWindow() {
@@ -255,11 +272,13 @@ import UniformTypeIdentifiers
         sessionRemaining = sessionEngine.remaining
         sessionPaused = sessionEngine.isPaused
         sessionFinished = sessionEngine.isFinished
+        sessionPauseReason = sessionEngine.pauseReason
         // The soundscape follows the guided session: plays while a step runs,
         // ducks when paused, and fades out when the group ends or is cancelled.
         sounds.sessionActive = sessionEngine.isActive
         sounds.sessionPaused = sessionEngine.isPaused
         sessionWindow?.sync(store: self)
+        fullscreenWindow?.sync(store: self)
     }
     func save() {
         guard storageWritable else { return }
@@ -276,6 +295,29 @@ import UniformTypeIdentifiers
     func hideSessionGuide() {
         sessionWindow?.hide()
         sessionWindow = nil
+    }
+
+    /// Shows the immersive fullscreen guide (idempotent). The floating guide
+    /// hides first — the two are mutually exclusive. Runs with either an active
+    /// or a finished session so the finished state can be shown fullscreen too.
+    func showFullscreenGuide() {
+        guard sessionActive || sessionFinished else { return }
+        if fullscreenWindow == nil { fullscreenWindow = FullscreenGuideController() }
+        fullscreenGuideVisible = true
+        fullscreenWindow?.show(store: self)
+    }
+    /// Hides the fullscreen guide and restores the floating companion when a
+    /// session is still present (active or finished). Idempotent: Esc arrives
+    /// through both .onExitCommand and the local keyDown monitor, and cancel
+    /// paths may call this again.
+    func hideFullscreenGuide() {
+        fullscreenWindow?.hide()
+        fullscreenWindow = nil
+        fullscreenGuideVisible = false
+        // The floating panel was hidden on fullscreen entry; recreate it for any
+        // still-present session. Finished-only sessions need it too: the main
+        // window may be closed and the finished card would otherwise be lost.
+        if sessionActive || sessionFinished { showSessionGuide() }
     }
     func exportData() {
         let panel = NSSavePanel(); panel.allowedContentTypes = [.json]; panel.nameFieldStringValue = "Interval-local-data.json"
