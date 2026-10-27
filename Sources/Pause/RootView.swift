@@ -17,6 +17,7 @@ enum Page: String, CaseIterable, Identifiable {
 }
 struct RootView: View {
     @ObservedObject var store: AppStore
+    @ObservedObject var updates: UpdateEngine
     @State private var page: Page? = .today
     @Environment(\.openWindow) private var openWindow
     var body: some View {
@@ -41,17 +42,36 @@ struct RootView: View {
                     case .today: TodayView(store: store)
                     case .routine: RoutineView(store: store)
                     case .insights: InsightsView(store: store)
-                    case .settings: PreferencesView(store: store)
-                    case .privacy: PrivacyView(store: store)
+                    case .settings: PreferencesView(store: store, updates: updates)
+                    case .privacy: PrivacyView(store: store, updates: updates)
                     }
-                }.padding(32).frame(maxWidth: 980, alignment: .leading).frame(maxWidth: .infinity)
-            }.background(Color(nsColor: .windowBackgroundColor))
+                }
+                .padding(32)
+                .frame(maxWidth: 980, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            // Only the background color extends under the titlebar (covering the
+            // resize seam); the content itself keeps the safe-area inset, so the
+            // first heading is never covered. Putting .ignoresSafeArea on the
+            // scroll view itself would slide content beneath the titlebar.
+            .background(Color(nsColor: .windowBackgroundColor).ignoresSafeArea(edges: .top))
+            // Hide the toolbar's own material: its opaque tint differs from the
+            // content background and shows as a darker band with a seam where it
+            // meets the sidebar. With it hidden, the whole detail column is one
+            // flat color and the divider reads as a single continuous line.
+            .toolbarBackground(.hidden, for: .windowToolbar)
         }
         .tint(intervalAccent)
+        // One continuous sidebar/detail divider: the two-column default draws two
+        // abutting rounded backgrounds that leave a visible gap in the middle.
+        .navigationSplitViewStyle(.balanced)
         .onAppear {
             let action = openWindow
             store.showMainWindow = { action(id: "main"); NSApp.activate(ignoringOtherApps: true) }
         }
+        // Observed here rather than in the preferences surface so resets from
+        // anywhere in the window (e.g. erasing all data) also reach the engine.
+        .onChange(of: store.preferences.updateAutoCheck) { _, enabled in updates.setAutoCheck(enabled) }
         .onReceive(NotificationCenter.default.publisher(for: .openIntervalWindow)) { _ in openWindow(id: "main"); page = .today }
         .alert("需要留意", isPresented: Binding(get: { store.error != nil }, set: { if !$0 { store.error = nil } })) { Button("知道了") { store.error = nil } } message: { Text(store.error ?? "") }
     }

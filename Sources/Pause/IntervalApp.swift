@@ -3,15 +3,30 @@ import AppKit
 
 @main struct IntervalApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
-    @StateObject private var store = AppStore()
+    @StateObject private var store: AppStore
+    @StateObject private var updates: UpdateEngine
+    init() {
+        let store = AppStore()
+        _store = StateObject(wrappedValue: store)
+        let engine = UpdateEngine.production()
+        // Wired at launch, not on window appearance: the app regularly runs as a
+        // menu-bar-only process with no window, and both the install-time session
+        // re-check and the automatic check schedule must not depend on one.
+        engine.attach(sessionActive: { store.sessionActive })
+        engine.setAutoCheck(store.preferences.updateAutoCheck)
+        _updates = StateObject(wrappedValue: engine)
+    }
     var body: some Scene {
         Window("间歇 · Interval", id: "main") {
-            RootView(store: store)
+            RootView(store: store, updates: updates)
                 .frame(minWidth: 860, minHeight: 650)
                 .onAppear { delegate.store = store }
         }
         .defaultSize(width: 1020, height: 740)
         .windowResizability(.contentMinSize)
+        // The sidebar carries the brand; a title label in the toolbar would sit
+        // on its own material patch next to the sidebar's titlebar segment.
+        .windowToolbarStyle(.unified(showsTitle: false))
         .commands {
             CommandGroup(replacing: .newItem) {}
             CommandGroup(after: .appInfo) {
@@ -24,7 +39,7 @@ import AppKit
             }
         }
         MenuBarExtra {
-            MenuContent(store: store)
+            MenuContent(store: store, updates: updates)
         } label: {
             Label {
                 Text("间歇")
@@ -48,13 +63,17 @@ import AppKit
 @MainActor final class AppDelegate: NSObject, NSApplicationDelegate {
     weak var store: AppStore?
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
-    func applicationWillTerminate(_ notification: Notification) { store?.save() }
+    func applicationWillTerminate(_ notification: Notification) {
+        store?.sounds.stop()
+        store?.save()
+    }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         store?.showMainWindow?(); return true
     }
 }
 struct MenuContent: View {
     @ObservedObject var store: AppStore
+    @ObservedObject var updates: UpdateEngine
     @Environment(\.openWindow) var openWindow
     var body: some View {
         Text("间歇 · 今天已完成 \(store.todayCompletions) 次活动")
@@ -79,11 +98,26 @@ struct MenuContent: View {
                 Button((store.preferences.context == context ? "✓ " : "") + context.title) { store.preferences.context = context }
             }
         }
+        Menu("活动音景") {
+            ForEach(PauseCore.SoundscapePref.allCases) { pref in
+                Button((store.preferences.soundscape == pref ? "✓ " : "") + pref.title) { store.setSoundscape(pref) }
+            }
+        }
         Button("稍后 15 分钟提醒") { store.snooze(minutes: 15) }
         Button("恢复提醒") { store.resumeReminders() }
         if store.hasConsented {
             Button(store.preferences.monitoring ? "暂停监测" : "继续监测") { store.preferences.monitoring.toggle() }
         }
+        Divider()
+        Text("当前版本 \(updates.currentVersionDisplay)")
+        Text(updates.statusText)
+        if let notice = updates.notice { Text(notice) }
+        Button("检查更新") { updates.checkForUpdates() }.disabled(!updates.canCheck)
+        if updates.isReady {
+            Button("更新") { updates.updateButtonPressed() }.disabled(store.sessionActive)
+            if store.sessionActive { Text("请先完成或结束当前活动") }
+        }
+        if updates.isFailed { Button("重试") { updates.checkForUpdates() } }
         Divider()
         Button("退出间歇") { store.save(); NSApp.terminate(nil) }.keyboardShortcut("q")
     }

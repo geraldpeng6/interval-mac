@@ -31,6 +31,8 @@ version_set_metadata "$INTERVAL_APP/Contents/Info.plist" "$INTERVAL_VERSION" "$I
 INTERVAL_ICONSET="$INTERVAL_ICON_ROOT/AppIcon.iconset"
 swift scripts/make-icon.swift "$INTERVAL_ICONSET"
 iconutil -c icns "$INTERVAL_ICONSET" -o "$INTERVAL_APP/Contents/Resources/AppIcon.icns"
+# Built-in soundscapes are synthesized at package time (no binary audio assets in git).
+swift scripts/make-sounds.swift "$INTERVAL_APP/Contents/Resources/sounds"
 xattr -cr "$INTERVAL_APP"
 codesign --force --options runtime --sign "${INTERVAL_SIGN_IDENTITY:--}" "$INTERVAL_APP"
 codesign --verify --deep --strict "$INTERVAL_APP"

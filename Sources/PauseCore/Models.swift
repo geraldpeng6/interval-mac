@@ -74,6 +74,25 @@ public struct AppRule: Codable, Identifiable, Sendable {
     public var id: String { bundleID }
     public init(bundleID: String, category: AppCategory) { self.bundleID = bundleID; self.category = category }
 }
+/// Codable mirror of the UI-facing soundscape choices (PauseCore has no
+/// AVFoundation dependency; the raw values match SoundEngine's file stems).
+public enum SoundscapePref: String, Codable, CaseIterable, Identifiable, Sendable {
+    case none
+    case whiteNoise = "white-noise"
+    case rain
+    case forest
+    case eveningPad = "evening-pad"
+    public var id: String { rawValue }
+    public var title: String {
+        switch self {
+        case .none: "关闭"
+        case .whiteNoise: "白噪声"
+        case .rain: "雨声"
+        case .forest: "林间"
+        case .eveningPad: "暮色音乐"
+        }
+    }
+}
 public struct Preferences: Codable, Sendable {
     public var monitoring = false
     public var keyboardEnabled = false
@@ -92,8 +111,15 @@ public struct Preferences: Codable, Sendable {
     public var cloudEnabled = false
     public var cloudEndpoint = "https://api.openai.com/v1/chat/completions"
     public var cloudModel = ""
+    /// App update checks against this repository's public GitHub Releases.
+    /// Separate from the optional cloud advice: turning this off only stops the
+    /// automatic update checks/downloads, never the health cloud toggle or key.
+    public var updateAutoCheck = true
+    /// Built-in soundscape played while a guided activity runs. Local playback
+    /// only; `.none` keeps the app silent as before.
+    public var soundscape = SoundscapePref.none
     public init() {}
-    private enum CodingKeys: String, CodingKey { case monitoring, keyboardEnabled, contextDetection, protectFullscreen, protectMicrophone, distractionHints, completionSound, context, highTypingThreshold, quietStart, quietEnd, quietHours, routine, appRules, cloudEnabled, cloudEndpoint, cloudModel }
+    private enum CodingKeys: String, CodingKey { case monitoring, keyboardEnabled, contextDetection, protectFullscreen, protectMicrophone, distractionHints, completionSound, context, highTypingThreshold, quietStart, quietEnd, quietHours, routine, appRules, cloudEnabled, cloudEndpoint, cloudModel, updateAutoCheck, soundscape }
     public init(from decoder: Decoder) throws {
         self.init()
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -114,6 +140,8 @@ public struct Preferences: Codable, Sendable {
         cloudEnabled = try c.decodeIfPresent(Bool.self, forKey: .cloudEnabled) ?? cloudEnabled
         cloudEndpoint = try c.decodeIfPresent(String.self, forKey: .cloudEndpoint) ?? cloudEndpoint
         cloudModel = try c.decodeIfPresent(String.self, forKey: .cloudModel) ?? cloudModel
+        updateAutoCheck = try c.decodeIfPresent(Bool.self, forKey: .updateAutoCheck) ?? updateAutoCheck
+        soundscape = try c.decodeIfPresent(SoundscapePref.self, forKey: .soundscape) ?? soundscape
     }
     public mutating func normalize() {
         highTypingThreshold = min(600, max(30, highTypingThreshold))
