@@ -15,7 +15,7 @@ public enum Activity: String, Codable, CaseIterable, Identifiable, Sendable {
     public var steps: [String] {
         switch self {
         case .eyes: ["看向约 6 米以外的真实物体，让视线离开这块屏幕。", "自然呼吸，轻柔、完整地眨眼。无需盯着倒计时。"]
-        case .wrists: ["放下键盘，放松肩膀。若手腕当下疼痛、麻木或有损伤，跳过拉伸，先休息或咨询专业人员。", "左臂舒适地向前伸，掌心向下、手指朝地。右手轻扶左手，让前臂有轻微牵拉感，约 15 秒；不弹震、不忍痛。", "缓慢松开，换右侧做同样的轻柔拉伸，约 15 秒。自然呼吸，不追求更大的幅度。", "慢慢回到自然位置，张开五指，再轻轻放松。有疼痛或刺痛时立即结束，不要反复拉扯。"]
+        case .wrists: ["放下键盘，放松肩膀。若手腕当下疼痛、麻木或有损伤，跳过拉伸，先休息或咨询专业人员。", "左臂舒适地向前伸，掌心向下、手指朝地。右手轻扶左手，让前臂有轻微牵拉感，至少 15 秒；不弹震、不忍痛。", "缓慢松开，换右侧做同样的轻柔拉伸，至少 15 秒。自然呼吸，不追求更大的幅度。", "慢慢回到自然位置，张开五指，再轻轻放松。有疼痛或刺痛时立即结束，不要反复拉扯。"]
         case .shoulders: ["坐直，放低双肩，保持自然呼吸。", "缓慢向左转头，在舒适位置停留约 5 秒，再回正；换右侧。", "轻轻向后转动肩膀。不要绕颈一整圈，也不要强拉头部。"]
         case .stand: ["放下手上的工作，扶稳桌面后缓慢站起。", "在安全、平坦的位置轻松走动，或交替变换站姿。", "自然呼吸。无需长时间僵站；不便站立时可改为坐姿活动。"]
         case .pelvic: ["仅在适合你的情况下练习。坐稳、放松腹部，自然呼吸。", "轻轻向内向上提起盆底约 2 秒，然后完全放松至少 4 秒。按自己的节奏重复，不要憋气或夹紧臀部。", "重点感受充分放松。不要在排尿时训练；有盆底疼痛、紧绷或术后情况，先咨询专业人员。"]
@@ -31,6 +31,34 @@ public enum Activity: String, Codable, CaseIterable, Identifiable, Sendable {
         case .shoulders: URL(string: "https://www.nhs.uk/live-well/exercise/sitting-exercises/")!
         case .stand: URL(string: "https://www.hse.gov.uk/msd/dse/work-routine.htm")!
         case .pelvic: URL(string: "https://www.nhsinform.scot/healthy-living/womens-health/middle-years-around-25-to-50-years/pelvic-health/pelvic-floor-muscles/")!
+        }
+    }
+    /// One symbol per guided step, for the fullscreen immersive guide. The
+    /// fullscreen presentation stages each activity (breathe → focus → settle),
+    /// so it needs finer-grained art than `symbol`. Callers require
+    /// `stepSymbols.count == steps.count` (asserted in PauseCoreTests).
+    public var stepSymbols: [String] {
+        switch self {
+        case .eyes: ["eye", "eye.fill"]
+        case .wrists: ["hand.raised.fingers.spread", "hand.point.up.left", "hand.point.right", "hand.wave"]
+        case .shoulders: ["figure.flexibility", "arrow.left.arrow.right", "arrow.triangle.2.circlepath"]
+        case .stand: ["arrow.up.to.line", "figure.walk", "leaf"]
+        case .pelvic: ["figure.mind.and.body", "wind", "leaf"]
+        }
+    }
+    /// Relative share of the guided time each step takes. Raw values are
+    /// intentional absolute weights, NOT proportions: consumers must divide by
+    /// the sum (`weight / stepWeights.sum() × durationSeconds`). wrists uses
+    /// [1,1,1,1] so four equal steps each get duration/4 — multiplying by the
+    /// raw value instead would give each step the full duration. Guaranteed
+    /// non-empty and all-positive so normalized shares are well defined.
+    public var stepWeights: [Double] {
+        switch self {
+        case .eyes: [0.6, 0.4]
+        case .wrists: [1, 1, 1, 1]
+        case .shoulders: [0.25, 0.4, 0.35]
+        case .stand: [0.1, 0.75, 0.15]
+        case .pelvic: [0.2, 0.55, 0.25]
         }
     }
 }
@@ -82,6 +110,9 @@ public enum SoundscapePref: String, Codable, CaseIterable, Identifiable, Sendabl
     case rain
     case forest
     case eveningPad = "evening-pad"
+    case campfire
+    case oceanWaves = "ocean-waves"
+    case morningBirds = "morning-birds"
     public var id: String { rawValue }
     public var title: String {
         switch self {
@@ -90,6 +121,9 @@ public enum SoundscapePref: String, Codable, CaseIterable, Identifiable, Sendabl
         case .rain: "雨声"
         case .forest: "林间"
         case .eveningPad: "暮色音乐"
+        case .campfire: "篝火"
+        case .oceanWaves: "海浪"
+        case .morningBirds: "晨间鸟鸣"
         }
     }
 }

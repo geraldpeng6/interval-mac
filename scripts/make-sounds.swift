@@ -63,7 +63,9 @@ func lcg(_ seed: UInt64) -> () -> Float {
     return {
         state &*= 6_364_136_223_846_793_005
         state &+= 1_442_695_040_888_963_407
-        return Float((state >> 33) & 0xFFFF_FFFF) / Float(UInt32.max) * 2 - 1
+        // Top 32 bits of the 64-bit state (a >> 33 would leave only 31 bits
+        // and map every sample into [-1, 0) — a half-wave DC skew).
+        return Float((state >> 32) & 0xFFFF_FFFF) / Float(UInt32.max) * 2 - 1
     }
 }
 
@@ -107,6 +109,118 @@ try render("forest", seconds: 16) { rate, samples in
                 value += Float(env * 0.05 * sin(2 * .pi * freq * phase))
             }
         }
+        samples.append(value)
+    }
+}
+
+// Campfire: leaky-integrator rumble (deep fire body) with sparse randomized
+// crackle impulses — short exponentially decaying noise bursts, unlike the
+// continuous filtered-noise beds of rain/forest. Intensity swells twice per
+// loop; loop length 14 s.
+try render("campfire", seconds: 14) { rate, samples in
+    let random = lcg(0x46495245) // "FIRE"
+    var rumble: Float = 0
+    var mid: Float = 0
+    var pops: [(age: Double, amp: Float, decay: Double)] = []
+    for _ in 0..<Int(14 * rate) {
+        let white = random()
+        rumble += 0.015 * (white - rumble) // ~105 Hz one-pole: fire roar
+        mid += 0.25 * (white - mid)        // brighter bed the crackles ride on
+        let t = Double(Double(samples.count)) / rate
+        let swell = 0.75 + 0.25 * sin(t * 2 * .pi / 7) // 2 cycles per loop
+        // Poisson-ish thinning: ~20 triggers/s; amplitude biased small,
+        // decay 2–10 ms. coin() folds the [-1, 1) stream to [0, 1) so
+        // probability draws and the decay range stay nonnegative.
+        func coin() -> Float { (random() + 1) * 0.5 }
+        if coin() < 0.000_45 {
+            let a = Double(coin())
+            pops.append((0, Float(0.08 + 0.5 * a * a), 0.002 + 0.008 * Double(coin())))
+        }
+        var crackle: Float = 0
+        var alive: [(age: Double, amp: Float, decay: Double)] = []
+        for var p in pops {
+            crackle += p.amp * Float(exp(-p.age / p.decay)) * random()
+            p.age += 1 / rate
+            if p.age < p.decay * 7 { alive.append(p) }
+        }
+        pops = alive
+        let body = (rumble * 0.4 + mid * 0.06) * Float(swell) + crackle * 0.12
+        // Fire pops stack up; soft-clip the bus so bursts stay punchy but the
+        // file never exceeds full scale.
+        samples.append(body <= -1 ? -1 : (body >= 1 ? 1 : Float(tanh(Double(body) * 0.75) / tanh(0.75))))
+    }
+}
+
+// Ocean waves: a quiet distant-surf bed under a periodic surge every 8 s —
+// fast attack, long wash-out — whose bright noise layer opens only at the
+// wave peak. Waves alternate big/small once per loop (16 s), so both
+// modulators complete whole cycles at the seam.
+try render("ocean-waves", seconds: 16) { rate, samples in
+    let random = lcg(0x4F434541) // "OCEA"
+    var surf: Float = 0
+    var bright: Float = 0
+    for _ in 0..<Int(16 * rate) {
+        let white = random()
+        surf += 0.01 * (white - surf)     // distant surf bed (~70 Hz)
+        bright += 0.16 * (white - bright) // breaking wash (~1.1 kHz)
+        let t = Double(Double(samples.count)) / rate
+        let p = t.truncatingRemainder(dividingBy: 8) / 8 // one wave per 8 s
+        let env: Double
+        if p < 0.3 {
+            env = 0.5 - 0.5 * cos(.pi * p / 0.3)          // steep rise ~2.4 s
+        } else {
+            env = 0.5 + 0.5 * cos(.pi * (p - 0.3) / 0.7)  // slow wash-out ~5.6 s
+        }
+        // Alternate big/small waves: exactly 1 cycle per 16 s loop.
+        let size = 0.6 + 0.4 * sin(t * 2 * .pi / 16)
+        let wave = 0.06 + 0.94 * env * size
+        samples.append(surf * 0.3 + bright * Float(wave) * 0.85)
+    }
+}
+
+// Morning birdsong: a lighter, brighter air bed than forest's dark one, with
+// busier higher-pitched birds — fast-trilled syllables at 3–5 kHz, a long
+// warble, and soft low dove coos (~600 Hz) for timbre contrast. Syllables are
+// swept sine bursts with raised-cosine envelopes placed away from the seam;
+// loop length 18 s.
+try render("morning-birds", seconds: 18) { rate, samples in
+    let random = lcg(0x4441574E) // "DAWN"
+    // One syllable: FM sweep with optional fast warble, raised-cosine envelope.
+    func bird(_ t: Double, at start: Double, dur: Double, from f0: Double, to f1: Double,
+              warble: Double = 0, rate w: Double = 0, gain: Double) -> Double {
+        let p = t - start
+        guard 0..<dur ~= p else { return 0 }
+        var env = sin(.pi * p / dur)
+        env *= env
+        let f = f0 + (f1 - f0) * (p / dur) + warble * sin(2 * .pi * w * p)
+        return gain * env * sin(2 * .pi * f * p)
+    }
+    for _ in 0..<Int(18 * rate) {
+        let white = random()
+        var air: Float = 0
+        air += 0.35 * (white - air) // light high morning air (~2.4 kHz)
+        let t = Double(Double(samples.count)) / rate
+        let dawn = 1 + 0.2 * sin(t * 2 * .pi / 9) // gentle glow, 2 cycles/loop
+        var value = Float(air) * 0.04 * Float(dawn)
+        // Quick bright trill: three short syllables.
+        for s in [1.3, 1.48, 1.66] {
+            value += Float(bird(t, at: s, dur: 0.09, from: 3_900, to: 4_200, warble: 250, rate: 38, gain: 0.045))
+        }
+        // Two descending whistles.
+        value += Float(bird(t, at: 4.6, dur: 0.28, from: 5_200, to: 3_600, gain: 0.05))
+        value += Float(bird(t, at: 5.05, dur: 0.22, from: 5_000, to: 3_700, gain: 0.04))
+        // Long fast warble.
+        value += Float(bird(t, at: 8.2, dur: 0.42, from: 3_100, to: 3_100, warble: 320, rate: 42, gain: 0.045))
+        // Mid trill pair.
+        for s in [11.4, 11.62] {
+            value += Float(bird(t, at: s, dur: 0.16, from: 2_800, to: 3_400, warble: 200, rate: 30, gain: 0.04))
+        }
+        // Soft low dove coos, well below forest's chirp range.
+        for s in [13.0, 13.55, 14.1] {
+            value += Float(bird(t, at: s, dur: 0.3, from: 640, to: 560, gain: 0.05))
+        }
+        // A closing chip near the end (still clear of the seam).
+        value += Float(bird(t, at: 16.4, dur: 0.12, from: 4_300, to: 4_100, warble: 150, rate: 35, gain: 0.035))
         samples.append(value)
     }
 }

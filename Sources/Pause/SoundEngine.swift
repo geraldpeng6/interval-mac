@@ -10,6 +10,9 @@ enum Soundscape: String, CaseIterable, Identifiable, Equatable {
     case rain
     case forest
     case eveningPad = "evening-pad"
+    case campfire
+    case oceanWaves = "ocean-waves"
+    case morningBirds = "morning-birds"
 
     public var id: String { rawValue }
     var title: String {
@@ -19,6 +22,9 @@ enum Soundscape: String, CaseIterable, Identifiable, Equatable {
         case .rain: "雨声"
         case .forest: "林间"
         case .eveningPad: "暮色音乐"
+        case .campfire: "篝火"
+        case .oceanWaves: "海浪"
+        case .morningBirds: "晨间鸟鸣"
         }
     }
     var pref: SoundscapePref {
@@ -28,6 +34,9 @@ enum Soundscape: String, CaseIterable, Identifiable, Equatable {
         case .rain: .rain
         case .forest: .forest
         case .eveningPad: .eveningPad
+        case .campfire: .campfire
+        case .oceanWaves: .oceanWaves
+        case .morningBirds: .morningBirds
         }
     }
     static func from(_ pref: SoundscapePref) -> Self { Self(rawValue: pref.rawValue) ?? .none }
